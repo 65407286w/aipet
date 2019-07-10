@@ -47,7 +47,8 @@ l_time_last=time.time()
 r_time_last=time.time()
 l_k=0
 r_k=0
-
+l_dc=50.0
+r_dc=50.0
 rospy.init_node('subscriber')
 def init():
     GPIO.setup(IN1, GPIO.OUT)
@@ -66,13 +67,21 @@ def callback_wheel(msg):    #定义回调函数
     global direction_r
     global cl
     global cr
+    global l_pid, r_pid
+    global l_p, r_p, l_dc, r_dc
     direction_l = int(msg.leftspeed)
     direction_r = int(msg.rightspeed)
+    l_pid.SetPoint = direction_l
+    r_pid.SetPoint = direction_r
     if direction_l==0 and direction_r ==0:
         print (location_x,location_y,location_th)
         print cl,cr
-
-    #print "*****"
+    if direction_l>0:
+        direction_l=1
+    if direction_l<0:
+        direction_l=-1
+    l_p.ChangeDutyCycle(l_dc)
+    r_p.ChangeDutyCycle(r_dc)
 
 
 def my_callback_l(channel_l):
@@ -156,9 +165,16 @@ def timer_callback(self):
     global r_b_last
     global l_a_last
     global l_b_last
+    global l_pid, r_pid
+    global l_p, r_p, l_dc, r_dc
+    l_pid.update(counter_l)
+    r_pid.update(counter_r)
+    l_dc+=l_pid.output
+    r_dc+=r_pid.output
+    l_p.ChangeDutyCycle(l_dc)
+    r_p.ChangeDutyCycle(r_dc)
 
-
-    print counter_l,   counter_r
+    print counter_l, counter_r
     if direction_l == 1:
         GPIO.output(IN1, GPIO.HIGH)
 
@@ -212,8 +228,10 @@ GPIO.add_event_detect(MH3,GPIO.FALLING,callback=my_callback_r) # ,bouncetime=1)
 timer_period = rospy.Duration(0.1)
 
 tmr = rospy.Timer(timer_period, timer_callback)
-pa = GPIO.PWM(ENA, 2000.0)
-pb = GPIO.PWM(ENB, 2000.0)
-pa.start(45.0)
-pb.start(45.0)
+l_p = GPIO.PWM(ENA, 2000.0)
+r_p = GPIO.PWM(ENB, 2000.0)
+l_p.start(l_dc)
+r_p.start(r_dc)
+l_pid=PID.PID(1.2, 1, 0.001)
+r_pid=PID.PID(1.2, 1, 0.001)
 rospy.spin()

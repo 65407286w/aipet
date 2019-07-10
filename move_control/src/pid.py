@@ -22,16 +22,13 @@ class PID:
         self.current_time = time.time()
         delta_time = self.current_time - self.last_time
         delta_error = error - self.last_error
-        if (delta_time >= self.sample_time):
-            self.PTerm = self.Kp * error #p
-            self.ITerm += error * delta_time #i
-            self.DTerm = 0.0
-            if delta_time > 0:
-                self.DTerm = delta_error / delta_time #d
-            self.last_time = self.current_time
-            self.last_error = error
-            self.output = self.PTerm + (self.Ki * self.ITerm) + (self.Kd * self.DTerm)
+        self.PTerm = self.Kp * error #p
+        self.ITerm += error * delta_time #i
+        self.DTerm = 0.0
+        if delta_time > 0:
+            self.DTerm = delta_error / delta_time #d
+        self.last_time = self.current_time
+        self.last_error = error
+        self.output = self.PTerm + (self.Ki * self.ITerm) + (self.Kd * self.DTerm)
 
 
-    def setSampleTime(self, sample_time):
-        self.sample_time = sample_time
