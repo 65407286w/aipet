@@ -31,4 +31,3 @@ class PID:
         self.last_error = error
         self.output = self.PTerm + (self.Ki * self.ITerm) + (self.Kd * self.DTerm)
 
-

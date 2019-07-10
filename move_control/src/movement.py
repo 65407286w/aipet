@@ -12,26 +12,26 @@ pub = rospy.Publisher('wheel',wheel,queue_size=1)    #实例化publisher,向话�
 
 def _forward():
     speed = wheel()
-    speed.rightspeed=1
-    speed.leftspeed = 1
+    speed.rightspeed = 70
+    speed.leftspeed = 70
     pub.publish(speed)    #发布secs
 
 def _left():
     speed = wheel()
-    speed.rightspeed=1
-    speed.leftspeed = -1
+    speed.rightspeed = 30
+    speed.leftspeed = -30
     pub.publish(speed)    #发布secs
 
 def _right():
     speed = wheel()
-    speed.rightspeed=-1
-    speed.leftspeed = 1
+    speed.rightspeed=-30
+    speed.leftspeed = 30
     pub.publish(speed)    #发布secs
 
 def _back():
     speed = wheel()
-    speed.rightspeed = -1
-    speed.leftspeed = -1
+    speed.rightspeed = -70
+    speed.leftspeed = -70
     pub.publish(speed)    #发布secs
 
 def _stop():

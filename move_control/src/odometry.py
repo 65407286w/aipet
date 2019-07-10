@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from std_msgs.msg import Int32
 from move_control.msg import *
-from pid import PID
+import pid
 import RPi.GPIO as GPIO
 import math
 #设置GPIO模式
@@ -16,10 +16,10 @@ GPIO.setmode(GPIO.BOARD)
 ENA = 8
 #right side
 ENB = 7
-IN3 = 12
-IN4 = 16
-IN1 = 18
-IN2 = 22
+IN1 = 12
+IN2 = 16
+IN3 = 18
+IN4 = 22
 
 # 接线 左边a 31 b 33 右边 a35 b 37
 MH1 = 31
@@ -71,8 +71,9 @@ def callback_wheel(msg):    #定义回调函数
     global l_p, r_p, l_dc, r_dc
     direction_l = int(msg.leftspeed)
     direction_r = int(msg.rightspeed)
-    l_pid.SetPoint = direction_l
-    r_pid.SetPoint = direction_r
+    print direction_l,direction_r
+    l_pid.SetPoint = abs(direction_l)
+    r_pid.SetPoint = abs(direction_r)
     if direction_l==0 and direction_r ==0:
         print (location_x,location_y,location_th)
         print cl,cr
@@ -80,6 +81,10 @@ def callback_wheel(msg):    #定义回调函数
         direction_l=1
     if direction_l<0:
         direction_l=-1
+    if direction_r>0:
+        direction_r=1
+    if direction_r<0:
+        direction_r=-1
     l_p.ChangeDutyCycle(l_dc)
     r_p.ChangeDutyCycle(r_dc)
 
@@ -106,9 +111,9 @@ def my_callback_l(channel_l):
         if l_d==0:
             l_k=0
             if l_a == l_b:
-                l_d=1
-            else:
                 l_d=-1
+            else:
+                l_d=1
             l_a_last=l_a
             l_b_last=l_b
 
@@ -139,9 +144,9 @@ def my_callback_r(channel_r):
         if r_d == 0:
             r_k = 0
             if r_a == r_b:
-                r_d = 1
-            else:
                 r_d = -1
+            else:
+                r_d = 1
             r_a_last = r_a
             r_b_last = r_b
 
@@ -167,14 +172,26 @@ def timer_callback(self):
     global l_b_last
     global l_pid, r_pid
     global l_p, r_p, l_dc, r_dc
-    l_pid.update(counter_l)
-    r_pid.update(counter_r)
+    # if direction_l ==0 and direction_r ==0:
+    #     return
+    l_pid.update(abs(counter_l))
+    r_pid.update(abs(counter_r))
     l_dc+=l_pid.output
     r_dc+=r_pid.output
+    if l_dc>90:
+        l_dc=90.0
+    if r_dc>90:
+        r_dc=90.0
+    if l_dc<10:
+        l_dc=10.0
+    if r_dc<10:
+        r_dc=10.0
     l_p.ChangeDutyCycle(l_dc)
     r_p.ChangeDutyCycle(r_dc)
-
+    print l_dc,r_dc
+    print direction_l,direction_r
     print counter_l, counter_r
+    print "---------------"
     if direction_l == 1:
         GPIO.output(IN1, GPIO.HIGH)
 
@@ -222,16 +239,16 @@ GPIO.add_event_detect(MH1,GPIO.FALLING,callback=my_callback_l)
 #GPIO.add_event_detect(MH2,GPIO.RISING,callback=my_callback_l)
 GPIO.add_event_detect(MH3,GPIO.FALLING,callback=my_callback_r) # ,bouncetime=1)
 #GPIO.add_event_detect(MH4,GPIO.RISING,callback=my_callback_r)
-
+l_p = GPIO.PWM(ENA, 2000.0)
+r_p = GPIO.PWM(ENB, 2000.0)
+l_p.start(l_dc)
+r_p.start(r_dc)
+l_pid=pid.PID(1.3, 0.15, 0.03)
+r_pid=pid.PID(1.3, 0.15, 0.03)
 
 
 timer_period = rospy.Duration(0.1)
 
 tmr = rospy.Timer(timer_period, timer_callback)
-l_p = GPIO.PWM(ENA, 2000.0)
-r_p = GPIO.PWM(ENB, 2000.0)
-l_p.start(l_dc)
-r_p.start(r_dc)
-l_pid=PID.PID(1.2, 1, 0.001)
-r_pid=PID.PID(1.2, 1, 0.001)
+
 rospy.spin()
