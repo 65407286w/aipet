@@ -26,12 +26,15 @@ MH1 = 31
 MH2 = 33
 MH3 = 35
 MH4 = 37
+encoder_num=360
+wheel_radius=0.021
+axle_length=0.09
 counter_r=0
 counter_l=0
 cr=0
 cl=0
-rate_encoder = 2 * math.pi * 21.0 / 360
-d=90
+unit_length = 2 * math.pi * wheel_radius / encoder_num
+
 location_x=0
 location_y=0
 location_th=0
@@ -49,7 +52,11 @@ l_k=0
 r_k=0
 l_dc=50.0
 r_dc=50.0
-rospy.init_node('subscriber')
+l_count=0
+r_count=0
+rospy.init_node('move_base')
+action_finish = rospy.Publisher('actionfinish',actionfinish,queue_size=1)
+odom = rospy.Publisher('odom',odom,queue_size=1)
 def init():
     GPIO.setup(IN1, GPIO.OUT)
     GPIO.setup(IN2, GPIO.OUT)
@@ -65,18 +72,25 @@ def init():
 def callback_wheel(msg):    #定义回调函数
     global direction_l
     global direction_r
-    global cl
-    global cr
+    global cl, cr
+    global l_count,r_count
     global l_pid, r_pid
     global l_p, r_p, l_dc, r_dc
+    l_pid.clear()
+    r_pid.clear()
     direction_l = int(msg.leftspeed)
     direction_r = int(msg.rightspeed)
-    print direction_l,direction_r
+    l_count= int(msg.l_count)
+    r_count= int(msg.r_count)
+    #print direction_l,direction_r
     l_pid.SetPoint = abs(direction_l)
     r_pid.SetPoint = abs(direction_r)
+
     if direction_l==0 and direction_r ==0:
         print (location_x,location_y,location_th)
-        print cl,cr
+        #print cl,cr
+    cl = 0
+    cr = 0
     if direction_l>0:
         direction_l=1
     if direction_l<0:
@@ -85,8 +99,11 @@ def callback_wheel(msg):    #定义回调函数
         direction_r=1
     if direction_r<0:
         direction_r=-1
+    l_dc=10
+    r_dc=10
     l_p.ChangeDutyCycle(l_dc)
     r_p.ChangeDutyCycle(r_dc)
+
 
 
 def my_callback_l(channel_l):
@@ -133,7 +150,7 @@ def my_callback_r(channel_r):
         r_a = GPIO.input(MH3)
         r_b = GPIO.input(MH4)
         r_time = time.time()
-        if r_time - r_time_last > 0.01:
+        if r_time - r_time_last > 0.1:
 
             r_d = 0
 
@@ -153,14 +170,13 @@ def my_callback_r(channel_r):
         counter_r += r_d
         r_time_last = r_time
 
-k=0
+
 
 def timer_callback(self):
     global counter_l
     global counter_r
     global cl
     global cr
-    global k
     global location_x
     global location_y
     global location_th
@@ -172,26 +188,22 @@ def timer_callback(self):
     global l_b_last
     global l_pid, r_pid
     global l_p, r_p, l_dc, r_dc
+    global l_count,r_count
     # if direction_l ==0 and direction_r ==0:
     #     return
-    l_pid.update(abs(counter_l))
-    r_pid.update(abs(counter_r))
-    l_dc+=l_pid.output
-    r_dc+=r_pid.output
-    if l_dc>90:
-        l_dc=90.0
-    if r_dc>90:
-        r_dc=90.0
-    if l_dc<10:
-        l_dc=10.0
-    if r_dc<10:
-        r_dc=10.0
-    l_p.ChangeDutyCycle(l_dc)
-    r_p.ChangeDutyCycle(r_dc)
-    print l_dc,r_dc
-    print direction_l,direction_r
-    print counter_l, counter_r
-    print "---------------"
+    if l_count!=0 or r_count!=0:
+        cr+=counter_r
+        cl+=counter_l
+        if (direction_l!=0 or direction_r!=0) and (abs(cr)>abs(r_count) or abs(cl)>abs(l_count)):
+            direction_l = 0
+            direction_r = 0
+            action_done=actionfinish()
+            action_done.x=location_x
+            action_done.y=location_y
+            action_done.th = location_th
+            action_finish.publish(action_done)
+
+
     if direction_l == 1:
         GPIO.output(IN1, GPIO.HIGH)
 
@@ -216,18 +228,37 @@ def timer_callback(self):
         GPIO.output(IN4, GPIO.HIGH)
 
 
-    inc_l = counter_l * rate_encoder
-    inc_r = counter_r * rate_encoder
-    th = (inc_r-inc_l) / d
+    inc_l = counter_l * unit_length
+    inc_r = counter_r * unit_length
+    th = (inc_l-inc_r) / axle_length
     location_th += th
-    if location_th>2*math.pi:
+    if location_th>math.pi:
         location_th -=2 * math.pi
-    if location_th<0:
+    if location_th<-math.pi:
         location_th += 2 * math.pi
-    location_x += math.cos(location_th) * (inc_l + inc_r) / 2
+    location_y += math.cos(location_th) * (inc_l + inc_r) / 2
 
-    location_y += math.sin(location_th) * (inc_l + inc_r) / 2
+    location_x += math.sin(location_th) * (inc_l + inc_r) / 2
     #print (counter_l,counter_r)
+    if direction_l != 0 or direction_r != 0:
+        l_pid.update(abs(counter_l))
+        r_pid.update(abs(counter_r))
+        l_dc+=l_pid.output
+        r_dc+=r_pid.output
+        if l_dc>90:
+            l_dc=90.0
+        if r_dc>90:
+            r_dc=90.0
+        if l_dc<10:
+            l_dc=10.0
+        if r_dc<10:
+            r_dc=10.0
+        l_p.ChangeDutyCycle(l_dc)
+        r_p.ChangeDutyCycle(r_dc)
+        # print l_dc,r_dc
+        # print direction_l,direction_r
+        # print counter_l, counter_r
+        # print "---------------"
     counter_l = 0
     counter_r = 0
 
@@ -243,11 +274,11 @@ l_p = GPIO.PWM(ENA, 2000.0)
 r_p = GPIO.PWM(ENB, 2000.0)
 l_p.start(l_dc)
 r_p.start(r_dc)
-l_pid=pid.PID(1.3, 0.15, 0.03)
-r_pid=pid.PID(1.3, 0.15, 0.03)
+l_pid=pid.PID(0.1, 0.015, 0.003)
+r_pid=pid.PID(0.1, 0.015, 0.003)
 
 
-timer_period = rospy.Duration(0.1)
+timer_period = rospy.Duration(0.03)
 
 tmr = rospy.Timer(timer_period, timer_callback)
 

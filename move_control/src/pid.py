@@ -17,6 +17,7 @@ class PID:
         self.last_error = 0.0
         self.int_error = 0.0
         self.output = 0.0
+        self.last_time = time.time()
     def update(self, feedback_value):
         error = self.SetPoint - feedback_value
         self.current_time = time.time()
@@ -30,4 +31,6 @@ class PID:
         self.last_time = self.current_time
         self.last_error = error
         self.output = self.PTerm + (self.Ki * self.ITerm) + (self.Kd * self.DTerm)
+        #print self.SetPoint,feedback_value,self.PTerm,self.Ki * self.ITerm,self.Kd * self.DTerm,"----",delta_time
+
 
