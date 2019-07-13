@@ -1,88 +1,69 @@
-# coding=utf-8
+#!/usr/bin/env python
+
+import math
+from math import sin, cos, pi
+
 import rospy
-import time
-import tty
-import termios
-from datetime import datetime
-from std_msgs.msg import Int32
-from move_control.msg import *
-rospy.init_node('rospub')
+import tf
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3
 
-pub = rospy.Publisher('wheel',wheel,queue_size=1)    #实例化publisher,向话题‘topic’发布Int32类型的数据
+rospy.init_node('odometry_publisher')
 
-def _forward():
-    speed = wheel()
-    speed.rightspeed=1
-    speed.leftspeed = 1
-    pub.publish(speed)    #发布secs
+odom_pub = rospy.Publisher("odom", Odometry, queue_size=50)
+odom_broadcaster = tf.TransformBroadcaster()
 
-def _left():
-    speed = wheel()
-    speed.rightspeed=1
-    speed.leftspeed = -1
-    pub.publish(speed)    #发布secs
+x = 0.0
+y = 0.0
+th = 0.0
 
-def _right():
-    speed = wheel()
-    speed.rightspeed=-1
-    speed.leftspeed = 1
-    pub.publish(speed)    #发布secs
+vx = 0.1
+vy = -0.1
+vth = 0.1
 
-def _back():
-    speed = wheel()
-    speed.rightspeed = -1
-    speed.leftspeed = -1
-    pub.publish(speed)    #发布secs
+current_time = rospy.Time.now()
+last_time = rospy.Time.now()
 
-def _stop():
-    speed = wheel()
-    speed.rightspeed = 0
-    speed.leftspeed = 0
-    pub.publish(speed)    #发布secs
+r = rospy.Rate(1.0)
+while not rospy.is_shutdown():
+    current_time = rospy.Time.now()
 
-def readchar():
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
+    # compute odometry in a typical way given the velocities of the robot
+    dt = (current_time - last_time).to_sec()
+    delta_x = (vx * cos(th) - vy * sin(th)) * dt
+    delta_y = (vx * sin(th) + vy * cos(th)) * dt
+    delta_th = vth * dt
 
-def readkey(getchar_fn=None):
-    getchar = getchar_fn or readchar
-    c1 = getchar()
-    if ord(c1) != 0x1b:
-        return c1
-    c2 = getchar()
-    if ord(c2) != 0x5b:
-        return c1
-    c3 = getchar()
-    return chr(0x10 + ord(c3) - 65)
+    x += delta_x
+    y += delta_y
+    th += delta_th
 
+    # since all odometry is 6DOF we'll need a quaternion created from yaw
+    odom_quat = tf.transformations.quaternion_from_euler(0, 0, th)
 
-while True:
-    key=readkey()
-    if key=='w':
-        #go_forward()
-        _forward()
+    # first, we'll publish the transform over tf
+    odom_broadcaster.sendTransform(
+        (x, y, 0.),
+        odom_quat,
+        current_time,
+        "base_link",
+        "odom"
+    )
 
-        print 'w'
-    if key=='a':
-        _left()
-        #go_back()
-        print 'a'
-    if key=='s':
-        _back()
-        #go_left()
-        print 's'
-    if key=='d':
-        _right()
-        print 'd'
-    	#go_right()
-    if key == 'x':
-     _stop()
-    if key=='q':
+    # next, we'll publish the odometry message over ROS
+    odom = Odometry()
+    odom.header.stamp = current_time
+    odom.header.frame_id = "odom"
 
-    	break
+    # set the position
+    odom.pose.pose = Pose(Point(x, y, 0.), Quaternion(*odom_quat))
+
+    # set the velocity
+    odom.child_frame_id = "base_link"
+    odom.twist.twist = Twist(Vector3(vx, vy, 0), Vector3(0, 0, vth))
+
+    # publish the message
+    odom_pub.publish(odom)
+
+    last_time = current_time
+    r.sleep()

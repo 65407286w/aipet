@@ -2,6 +2,7 @@
 # This will move channel 0 from min to max position repeatedly.
 # Author: Tony DiCola
 # License: Public Domain
+# 不用了不用了
 from __future__ import division
 import time
 
