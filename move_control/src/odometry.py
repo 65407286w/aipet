@@ -57,9 +57,10 @@ l_dc=50.0
 r_dc=50.0
 l_count=0
 r_count=0
+
+rospy.init_node('move_base')
 current_time = rospy.Time.now()
 last_time = rospy.Time.now()
-rospy.init_node('move_base')
 action_finish = rospy.Publisher('actionfinish',actionfinish,queue_size=1)
 odom_pub = rospy.Publisher("odom", Odometry, queue_size=50)
 odom_broadcaster = tf.TransformBroadcaster()
@@ -81,7 +82,7 @@ def callback_wheel(msg):    #定义回调函数
     global cl, cr
     global l_count,r_count
     global l_pid, r_pid
-    global l_p, r_p, l_dc, r_dc
+    global l_p, r_p, l_dc, r_dc, l_aa,l_bb
     #l_pid.clear()
     #r_pid.clear()
     direction_l = int(msg.leftspeed)
@@ -94,6 +95,7 @@ def callback_wheel(msg):    #定义回调函数
 
     if direction_l==0 and direction_r ==0:
         print (location_x,location_y,location_th)
+
         #print cl,cr
     cl = 0
     cr = 0
@@ -113,6 +115,7 @@ def callback_wheel(msg):    #定义回调函数
 
 
 def my_callback_l(channel_l):
+
     global counter_l
     global l_d
     global l_k
@@ -121,24 +124,29 @@ def my_callback_l(channel_l):
     global l_b_last
 
     if GPIO.event_detected(MH1):
-        l_a=GPIO.input(MH1)
-        l_b=GPIO.input(MH2)
         l_time=time.time()
         if l_time-l_time_last>0.01:
             l_d=0
+        # l_a = GPIO.input(MH1)
+        # l_b = GPIO.input(MH2)
+        #print l_a,l_b
 
-        if (l_d!=0 and (l_a - l_b != l_a_last - l_b_last)):
-            l_k+=1
-        if (l_k>2):
-            l_d=0
+        #
+        #
+        #
+        #
+        # if (l_d!=0 and (l_a - l_b != l_a_last - l_b_last)):
+        #     l_k+=1
+        # if (l_k>2):
+        #     l_d=0
         if l_d==0:
-            l_k=0
-            if l_a == l_b:
-                l_d=-1
-            else:
+            # l_k=0
+            if direction_l>0:
                 l_d=1
-            l_a_last=l_a
-            l_b_last=l_b
+            else:
+                l_d=-1
+            # l_a_last=l_a
+            # l_b_last=l_b
 
         counter_l+=l_d
         l_time_last=l_time
@@ -153,25 +161,26 @@ def my_callback_r(channel_r):
     global r_b_last
 
     if GPIO.event_detected(MH3):
-        r_a = GPIO.input(MH3)
-        r_b = GPIO.input(MH4)
         r_time = time.time()
-        if r_time - r_time_last > 0.1:
-
+        if r_time - r_time_last > 0.01:
             r_d = 0
-
-        if (r_d != 0 and (r_a - r_b != r_a_last - r_b_last)):
-            r_k += 1
-        if (r_k > 2):
-            r_d = 0
+        # r_a = GPIO.input(MH3)
+        # r_b = GPIO.input(MH4)
+        #
+        #
+        #
+        # if (r_d != 0 and (r_a - r_b != r_a_last - r_b_last)):
+        #     r_k += 1
+        # if (r_k > 2):
+        #     r_d = 0
         if r_d == 0:
-            r_k = 0
-            if r_a == r_b:
-                r_d = -1
-            else:
+            # r_k = 0
+            if direction_r>0:
                 r_d = 1
-            r_a_last = r_a
-            r_b_last = r_b
+            else:
+                r_d = -1
+            # r_a_last = r_a
+            # r_b_last = r_b
 
         counter_r += r_d
         r_time_last = r_time
@@ -243,7 +252,7 @@ def timer_callback(self):
         location_th += 2 * math.pi
     location_x += math.cos(location_th) * (inc_l + inc_r) / 2
     location_y += math.sin(location_th) * (inc_l + inc_r) / 2
-    odom_quat = tf.transformations.quaternion_from_euler(0, 0, th)
+    odom_quat = tf.transformations.quaternion_from_euler(0, 0, location_th)
     odom_broadcaster.sendTransform(
         (location_x, location_y, 0.),
         odom_quat,
@@ -261,17 +270,19 @@ def timer_callback(self):
     odom_pub.publish(odom)
     #print (counter_l,counter_r)
     #if direction_l != 0 or direction_r != 0:
-    if l_count!=0 or r_count!=0:
-        cr+=counter_r
-        cl+=counter_l
-        if (direction_l!=0 or direction_r!=0) and (abs(cr)>abs(r_count) or abs(cl)>abs(l_count)):
-            direction_l = 0
-            direction_r = 0
-            action_done=actionfinish()
-            action_done.x=location_x
-            action_done.y=location_y
-            action_done.th = location_th
-            action_finish.publish(action_done)
+
+
+    # if l_count!=0 or r_count!=0:
+    #     cr+=counter_r
+    #     cl+=counter_l
+    #     if (direction_l!=0 or direction_r!=0) and (abs(cr)>abs(r_count) or abs(cl)>abs(l_count)):
+    #         direction_l = 0
+    #         direction_r = 0
+    #         action_done=actionfinish()
+    #         action_done.x=location_x
+    #         action_done.y=location_y
+    #         action_done.th = location_th
+    #         action_finish.publish(action_done)
     l_pid.update(abs(counter_l))
     r_pid.update(abs(counter_r))
     l_dc+=l_pid.output
@@ -286,10 +297,13 @@ def timer_callback(self):
         r_dc=10.0
     l_p.ChangeDutyCycle(l_dc)
     r_p.ChangeDutyCycle(r_dc)
-    # print l_dc,r_dc
-    # print direction_l,direction_r
+    #print l_dc,r_dc
+    #print direction_l,direction_r
     # print counter_l, counter_r
-    # print "---------------"
+    #print "---------------"
+    cl+=counter_l
+    cr+=counter_r
+    #print cl,cr
     counter_l = 0
     counter_r = 0
 
@@ -305,8 +319,8 @@ l_p = GPIO.PWM(ENA, 2000.0)
 r_p = GPIO.PWM(ENB, 2000.0)
 l_p.start(l_dc)
 r_p.start(r_dc)
-l_pid=pid.PID(0.1, 0.015, 0.003)
-r_pid=pid.PID(0.1, 0.015, 0.003)
+l_pid=pid.PID(1, 0.015, 0.003)
+r_pid=pid.PID(1, 0.015, 0.003)
 
 
 timer_period = rospy.Duration(0.03)

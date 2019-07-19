@@ -1,69 +1,216 @@
-#!/usr/bin/env python
-
-import math
-from math import sin, cos, pi
-
+# coding=utf-8
 import rospy
-import tf
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3
+import time
+import tty
+import termios
+import math
+from datetime import datetime
+from std_msgs.msg import Int32
+from move_control.msg import *
 
-rospy.init_node('odometry_publisher')
+location_x=0
+location_y=0
+location_th=0
 
-odom_pub = rospy.Publisher("odom", Odometry, queue_size=50)
-odom_broadcaster = tf.TransformBroadcaster()
+def callback_actionfinish(msg):
+    global location_x
+    global location_y
+    global location_th
+    print 'action done'
+    location_x= float(msg.x)
+    location_y = float(msg.y)
+    location_th = float(msg.th)
 
-x = 0.0
-y = 0.0
-th = 0.0
 
-vx = 0.1
-vy = -0.1
-vth = 0.1
+rospy.init_node('move_control')
+pub = rospy.Publisher('wheel',wheel,queue_size=1)
+#ac_done = rospy.Subscriber('actionfinish',actionfinish,callback_actionfinish)
+wheel_radius=0.021
+axle_length=0.09
+encoder_num=350
+unit_length=wheel_radius*2*math.pi/encoder_num
+def _forward():
 
-current_time = rospy.Time.now()
-last_time = rospy.Time.now()
+    speed = wheel()
+    speed.rightspeed = 25
+    speed.leftspeed = 25
+    speed.r_count=0
+    speed.l_count=0
+    pub.publish(speed)    #发布secs
 
-r = rospy.Rate(1.0)
-while not rospy.is_shutdown():
-    current_time = rospy.Time.now()
+def _left():
+    speed = wheel()
+    speed.rightspeed = 15
+    speed.leftspeed = -15
+    speed.r_count=0
+    speed.l_count=0
+    pub.publish(speed)    #发布secs
 
-    # compute odometry in a typical way given the velocities of the robot
-    dt = (current_time - last_time).to_sec()
-    delta_x = (vx * cos(th) - vy * sin(th)) * dt
-    delta_y = (vx * sin(th) + vy * cos(th)) * dt
-    delta_th = vth * dt
+def _right():
+    speed = wheel()
+    speed.rightspeed=-15
+    speed.leftspeed = 15
+    speed.r_count=0
+    speed.l_count=0
+    pub.publish(speed)    #发布secs
 
-    x += delta_x
-    y += delta_y
-    th += delta_th
+def _back():
+    speed = wheel()
+    speed.rightspeed = -25
+    speed.leftspeed = -25
+    speed.r_count=0
+    speed.l_count=0
+    pub.publish(speed)    #发布secs
 
-    # since all odometry is 6DOF we'll need a quaternion created from yaw
-    odom_quat = tf.transformations.quaternion_from_euler(0, 0, th)
+def _stop():
+    speed = wheel()
+    speed.rightspeed = 0
+    speed.leftspeed = 0
+    speed.r_count=0
+    speed.l_count=0
+    pub.publish(speed)    #发布secs
 
-    # first, we'll publish the transform over tf
-    odom_broadcaster.sendTransform(
-        (x, y, 0.),
-        odom_quat,
-        current_time,
-        "base_link",
-        "odom"
-    )
+def MoveLine(dist,spd):
+    speed = wheel()
+    if dist>0:
+        speed.rightspeed = spd
+        speed.leftspeed = spd
+        speed.r_count = int(dist/unit_length)
+        speed.l_count = int(dist/unit_length)
+    else:
+        speed.rightspeed = -spd
+        speed.leftspeed = -spd
+        speed.r_count = int(dist / unit_length)
+        speed.l_count = int(dist / unit_length)
+    if speed.r_count==0 or speed.l_count ==0:
+        return
+    pub.publish(speed)  # 发布secs
+    msg=rospy.wait_for_message('actionfinish',actionfinish)
+    global location_x
+    global location_y
+    global location_th
+    print 'action done'
+    location_x = float(msg.x)
+    location_y = float(msg.y)
+    location_th = float(msg.th)
+    print location_x, location_y, location_th
 
-    # next, we'll publish the odometry message over ROS
-    odom = Odometry()
-    odom.header.stamp = current_time
-    odom.header.frame_id = "odom"
+def MoveRotate(angle,spd):
 
-    # set the position
-    odom.pose.pose = Pose(Point(x, y, 0.), Quaternion(*odom_quat))
+    speed = wheel()
+    if angle>0:
+        speed.rightspeed = -spd
+        speed.leftspeed = spd
+        speed.r_count = int(-0.5*angle*axle_length/unit_length)
+        speed.l_count = int(0.5*angle*axle_length/unit_length)
+    else:
+        speed.rightspeed = spd
+        speed.leftspeed = -spd
+        speed.r_count = int(0.5*angle*axle_length/unit_length)
+        speed.l_count = int(-0.5*angle*axle_length/unit_length)
+    if speed.r_count==0 or speed.l_count ==0:
+        return
+    pub.publish(speed)  # 发布secs
+    msg=rospy.wait_for_message('actionfinish',actionfinish)
+    global location_x
+    global location_y
+    global location_th
+    print 'action done'
+    location_x = float(msg.x)
+    location_y = float(msg.y)
+    location_th = float(msg.th)
+    print location_x,location_y,location_th
 
-    # set the velocity
-    odom.child_frame_id = "base_link"
-    odom.twist.twist = Twist(Vector3(vx, vy, 0), Vector3(0, 0, vth))
+def MoveTo(x,y,spd):
+    th=math.atan2(x-location_x,y-location_y)
+    print th
+    th=th-location_th
+    print th
+    if th<-math.pi:
+        th+=math.pi*2
+    if th>math.pi:
+        th-=math.pi*2
+    MoveRotate(th,spd)
+    MoveLine(((x-location_x)**2+(y-location_y)**2)**0.5,spd)
 
-    # publish the message
-    odom_pub.publish(odom)
+def readchar():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
-    last_time = current_time
-    r.sleep()
+def readkey(getchar_fn=None):
+    getchar = getchar_fn or readchar
+    c1 = getchar()
+    if ord(c1) != 0x1b:
+        return c1
+    c2 = getchar()
+    if ord(c2) != 0x5b:
+        return c1
+    c3 = getchar()
+    return chr(0x10 + ord(c3) - 65)
+
+
+
+while True:
+    #print "input: f,r,t,q"
+    key=readkey()
+    # if key=='f':
+    #     print "input: dist"
+    #     dist=input()
+    #     print "input: speed(1-30)"
+    #     speed =input()
+    #     MoveLine(dist,speed)
+    # if key=='r':
+    #     print "input: angle"
+    #     angle=input()
+    #     print "input: speed(1-30)"
+    #     speed =input()
+    #     MoveRotate(angle,speed)
+    # if key=='t':
+    #     print "input: x"
+    #     x=input()
+    #     print "input: y"
+    #     y = input()
+    #     print "input: speed(1-30)"
+    #     speed =input()
+    #     MoveTo(x,y,speed)
+    if key=='w':
+        #go_forward()
+        _forward()
+
+        print 'w'
+    if key=='a':
+        _left()
+        #go_back()
+        print 'a'
+    if key=='s':
+        _back()
+        #go_left()
+        print 's'
+    if key=='d':
+        _right()
+        print 'd'
+    	#go_right()
+
+    if key=='f':
+        MoveRotate(-math.pi,10)
+        print 'f'
+    if key=='h':
+        MoveRotate(math.pi,10)
+        print 'h'
+    if key=='t':
+        MoveLine(0.5,15)
+        print 't'
+    if key=='g':
+        MoveLine(-0.5,15)
+        print 'g'
+    if key == 'x':
+        _stop()
+    if key=='q':
+
+    	break
